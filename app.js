@@ -87,8 +87,6 @@ app.post("/login", (req, res) => {
   });
 });
 
-
-
 // Ruta para obtener todos los usuarios
 app.get("/admin/users", (req, res) => {
     const query = "SELECT * FROM usuarios"; // Cambia 'users' por el nombre real de tu tabla de usuarios
@@ -211,9 +209,107 @@ app.delete("/admin/users/:id", (req, res) => {
     });
   });
   
+
+  // Ruta para registrar un nuevo usuario
+app.post("/users/register", (req, res) => {
+  const { nombre, app, apm, fn, telefono, email, password } = req.body;
+
+  // Verificar si todos los campos son proporcionados
+  if (!nombre || !app || !apm || !fn || !telefono || !email || !password) {
+    return res.status(400).json({ error: "Todos los campos son obligatorios" });
+  }
+
+  // Comprobar si el correo ya está registrado en la base de datos
+  const checkEmailQuery = "SELECT * FROM usuarios WHERE email = ?";
+  db.query(checkEmailQuery, [email], (err, results) => {
+    if (err) {
+      console.error("Error al verificar el correo:", err);
+      return res.status(500).json({ error: "Error al verificar el correo" });
+    }
+
+    // Si el correo ya existe, devolver un error
+    if (results.length > 0) {
+      return res.status(400).json({ error: "El correo electrónico ya está registrado" });
+    }
+
+    // Encriptar la contraseña
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
+      if (err) {
+        console.error("Error al encriptar la contraseña:", err);
+        return res.status(500).json({ error: "Error al encriptar la contraseña" });
+      }
+
+      // Insertar usuario en la base de datos
+      const query = `INSERT INTO usuarios (nombre, app, apm, fn, telefono, email, password) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+      db.query(query, [nombre, app, apm, fn, telefono, email, hashedPassword], (err, result) => {
+        if (err) {
+          console.error("Error al crear el usuario:", err);
+          return res.status(500).json({ error: "Error al crear el usuario" });
+        }
+
+        res.status(201).json({
+          message: "Usuario creado exitosamente",
+          id_usuario: result.insertId, // Devolvemos el ID del nuevo usuario
+        });
+      });
+    });
+  });
+});
+
+// Ruta para el login de usuario
+app.post("/users/login", (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "El correo y la contraseña son obligatorios" });
+  }
+
+  // Buscar al usuario por el email
+  const query = "SELECT * FROM usuarios WHERE email = ?";
   
+  db.query(query, [email], (err, results) => {
+    if (err) {
+      console.error("Error al buscar el usuario:", err);
+      return res.status(500).json({ error: "Error al buscar el usuario" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    const user = results[0];
+
+    // Comparar las contraseñas
+    bcrypt.compare(password, user.password, (err, isMatch) => {
+      if (err) {
+        console.error("Error al comparar la contraseña:", err);
+        return res.status(500).json({ error: "Error al comparar la contraseña" });
+      }
+
+      if (!isMatch) {
+        return res.status(400).json({ error: "Contraseña incorrecta" });
+      }
+
+      // Si la contraseña es correcta, generar un token JWT
+      const payload = {
+        id: user.id_usuario,
+        nombre: user.nombre,
+        email: user.email,
+      };
+
+      const token = jwt.sign(payload, "secreto_muy_secreto", { expiresIn: "1h" });
+
+      res.json({
+        message: "Inicio de sesión exitoso",
+        token: token,
+      });
+    });
+  });
+});
+
 
 // Iniciar el servidor
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Servidor corriendo en http://localhost:${port}`);
 });
